@@ -113,12 +113,13 @@ class FPN(Layer):
             laterals.append(self.lateral_convs[i](body_feats[i]))
 
         used_backbone_levels = len(self.spatial_scale)
-        for i in range(used_backbone_levels - 1, 0, -1):
+        for i in range(used_backbone_levels - 1):
+            idx = used_backbone_levels - 1 - i
             upsample = F.interpolate(
-                laterals[i],
+                laterals[idx],
                 scale_factor=2.,
                 mode='nearest', )
-            laterals[i - 1] += upsample
+            laterals[idx - 1] += upsample
 
         fpn_output = []
         for lvl in range(self.min_level, self.highest_backbone_level + 1):

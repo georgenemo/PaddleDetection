@@ -233,7 +233,7 @@ class FCOSHead(nn.Layer):
                 feat_name,
                 ScaleReg())
             self.scales_regs.append(scale_reg)
-'''
+
     def _compute_locatioins(self, fpn_feats):
         locations_list = []
         for lvl, feature in enumerate(fpn_feats):
@@ -260,7 +260,7 @@ class FCOSHead(nn.Layer):
             location.stop_gradient = True
             locations_list.append(location)
         return locations_list
-'''
+
     def forward(self, fpn_feats, mode):
         assert len(fpn_feats) == len(self.fpn_stride), "The size of fpn_feats is not equal to size of fpn_stride"
         fcos_cls_feats, fcos_reg_feats = self.fcos_feat(fpn_feats)
@@ -286,31 +286,7 @@ class FCOSHead(nn.Layer):
             centerness_list.append(centerness)
         
         if mode == 'infer':
-            locations_list = []
-            for lvl, feature in enumerate(fpn_feats):
-                shape_fm = paddle.shape(feature)
-                shape_fm.stop_gradient = True
-                h, w = shape_fm[2], shape_fm[3]
-                fpn_stride = self.fpn_stride[lvl]
-                shift_x = paddle.to_tensor(
-                    np.arange(0, w * fpn_stride, fpn_stride).astype(np.float32))
-                shift_y = paddle.to_tensor(
-                    np.arange(0, h * fpn_stride, fpn_stride).astype(np.float32))
-                shift_x = paddle.unsqueeze(shift_x, axis=0)
-                shift_y = paddle.unsqueeze(shift_y, axis=1)
-                shift_x = paddle.expand_as(
-                    shift_x, feature[0, 0, :, :])
-                shift_y = paddle.expand_as(
-                    shift_y, feature[0, 0, :, :])
-                shift_x.stop_gradient = True
-                shift_y.stop_gradient = True
-                shift_x = paddle.reshape(shift_x, shape=[-1])
-                shift_y = paddle.reshape(shift_y, shape=[-1])
-                location = paddle.stack(
-                    [shift_x, shift_y], axis=-1) + fpn_stride // 2
-                location.stop_gradient = True
-                locations_list.append(location)
-                #locations_list = self._compute_locatioins(fpn_feats)
+            locations_list = self._compute_locatioins(fpn_feats)
             return locations_list, cls_logits_list, bboxes_reg_list, centerness_list
         else:
             return cls_logits_list, bboxes_reg_list, centerness_list

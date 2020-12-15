@@ -211,8 +211,8 @@ class FCOSLoss(nn.Layer):
 
         # 3. centerness: sigmoid_cross_entropy_with_logits_loss
         centerness_flatten = paddle.squeeze(centerness_flatten, axis=-1)
-        ctn_loss = sigmoid_cross_entropy_with_logits_loss(centerness_flatten, tag_center_flatten) / num_positive_fp32
-        ctn_loss = ctn_loss * mask_positive_float / normalize_sum
+        ctn_loss = sigmoid_cross_entropy_with_logits_loss(centerness_flatten, tag_center_flatten)
+        ctn_loss = ctn_loss * mask_positive_float / num_positive_fp32
 
         loss_all = {
             "loss_centerness": paddle.sum(ctn_loss),
