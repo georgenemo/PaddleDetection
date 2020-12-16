@@ -13,7 +13,6 @@ from paddle.nn.initializer import Normal, Constant, XavierUniform
 from paddle.regularizer import L2Decay
 from ppdet.core.workspace import register
 from ppdet.modeling import ops
-import numpy as np 
 
 class ConvNormLayer(nn.Layer):
     def __init__(self,
@@ -121,18 +120,13 @@ class FCOSFeat(nn.Layer):
                     name=reg_conv_name))
             self.reg_subnet_convs.append(reg_conv)
 
-    def forward(self, fpn_feats):
-        fcos_cls_feats = []
-        fcos_reg_feats = []
-        for feat in fpn_feats:
-            cls_feat = feat
-            reg_feat = feat
-            for i in range(self.num_convs):
-                cls_feat = F.relu(self.cls_subnet_convs[i](cls_feat))
-                reg_feat = F.relu(self.reg_subnet_convs[i](reg_feat))
-            fcos_cls_feats.append(cls_feat)
-            fcos_reg_feats.append(reg_feat)
-        return fcos_cls_feats, fcos_reg_feats
+    def forward(self, fpn_feat):
+        cls_feat = fpn_feat
+        reg_feat = fpn_feat
+        for i in range(self.num_convs):
+            cls_feat = F.relu(self.cls_subnet_convs[i](cls_feat))
+            reg_feat = F.relu(self.reg_subnet_convs[i](reg_feat))
+        return cls_feat, reg_feat
 
 
 @register
@@ -169,13 +163,10 @@ class FCOSHead(nn.Layer):
         self.norm_reg_targets = norm_reg_targets
         self.centerness_on_reg = centerness_on_reg
         self.use_dcn_in_tower = use_dcn_in_tower
-        self.fcos_head_cls = []
-        self.fcos_head_reg = []
-        self.fcos_head_centerness = []
 
         conv_cls_name = "fcos_head_cls"
         bias_init_value = -math.log((1 - self.prior_prob) / self.prior_prob)
-        fcos_head_cls = self.add_sublayer(
+        self.fcos_head_cls = self.add_sublayer(
             conv_cls_name,
             Conv2D(
                 in_channels=256,
@@ -189,10 +180,9 @@ class FCOSHead(nn.Layer):
                 bias_attr=ParamAttr(
                     name=conv_cls_name + "_bias",
                     initializer=Constant(value=bias_init_value)))) #
-        self.fcos_head_cls.append(fcos_head_cls)
 
         conv_reg_name = "fcos_head_reg"
-        fcos_head_reg = self.add_sublayer(
+        self.fcos_head_reg = self.add_sublayer(
             conv_reg_name,
             Conv2D(
                 in_channels=256,
@@ -206,10 +196,9 @@ class FCOSHead(nn.Layer):
                 bias_attr=ParamAttr(
                     name=conv_reg_name + "_bias",
                     initializer=Constant(value=0))))
-        self.fcos_head_reg.append(fcos_head_reg)
 
         conv_centerness_name = "fcos_head_centerness"
-        fcos_head_centerness = self.add_sublayer(
+        self.fcos_head_centerness = self.add_sublayer(
             conv_centerness_name,
             Conv2D(
                 in_channels=256,
@@ -223,7 +212,6 @@ class FCOSHead(nn.Layer):
                 bias_attr=ParamAttr(
                     name=conv_centerness_name + "_bias",
                     initializer=Constant(value=0))))
-        self.fcos_head_centerness.append(fcos_head_centerness)
 
         self.scales_regs = []
         for i in range(len(self.fpn_stride)):
@@ -236,15 +224,11 @@ class FCOSHead(nn.Layer):
 
     def _compute_locatioins(self, fpn_feats):
         locations_list = []
-        for lvl, feature in enumerate(fpn_feats):
-            shape_fm = paddle.shape(feature)
-            shape_fm.stop_gradient = True
-            h, w = shape_fm[2], shape_fm[3]
-            fpn_stride = self.fpn_stride[lvl]
-            shift_x = paddle.to_tensor(
-                np.arange(0, w * fpn_stride, fpn_stride).astype(np.float32))
-            shift_y = paddle.to_tensor(
-                np.arange(0, h * fpn_stride, fpn_stride).astype(np.float32))
+        for fpn_stride, feature in zip(self.fpn_stride, fpn_feats):
+            shape_fm = feature.shape
+            h,w= shape_fm[2], shape_fm[3]
+            shift_x = paddle.arange(0, w * fpn_stride, fpn_stride)
+            shift_y = paddle.arange(0, h * fpn_stride, fpn_stride)
             shift_x = paddle.unsqueeze(shift_x, axis=0)
             shift_y = paddle.unsqueeze(shift_y, axis=1)
             shift_x = paddle.expand_as(
@@ -256,25 +240,24 @@ class FCOSHead(nn.Layer):
             shift_x = paddle.reshape(shift_x, shape=[-1])
             shift_y = paddle.reshape(shift_y, shape=[-1])
             location = paddle.stack(
-                [shift_x, shift_y], axis=-1) + fpn_stride // 2
+                [shift_x, shift_y], axis=-1) + fpn_stride / 2
             location.stop_gradient = True
             locations_list.append(location)
         return locations_list
 
     def forward(self, fpn_feats, mode):
         assert len(fpn_feats) == len(self.fpn_stride), "The size of fpn_feats is not equal to size of fpn_stride"
-        fcos_cls_feats, fcos_reg_feats = self.fcos_feat(fpn_feats)
         cls_logits_list = []
         bboxes_reg_list = []
         centerness_list = []
-        for scale_reg, fpn_stride, fcos_cls_feat, fcos_reg_feat in zip(self.scales_regs, self.fpn_stride, fcos_cls_feats,
-                                                                       fcos_reg_feats):
-            cls_logits = self.fcos_head_cls[0](fcos_cls_feat)
-            bbox_reg = scale_reg(self.fcos_head_reg[0](fcos_reg_feat))
+        for scale_reg, fpn_stride, fpn_feat in zip(self.scales_regs, self.fpn_stride, fpn_feats):
+            fcos_cls_feat, fcos_reg_feat = self.fcos_feat(fpn_feat)
+            cls_logits = self.fcos_head_cls(fcos_cls_feat)
+            bbox_reg = scale_reg(self.fcos_head_reg(fcos_reg_feat))
             if self.centerness_on_reg:
-                centerness = self.fcos_head_centerness[0](fcos_reg_feat)
+                centerness = self.fcos_head_centerness(fcos_reg_feat)
             else:
-                centerness = self.fcos_head_centerness[0](fcos_cls_feat)
+                centerness = self.fcos_head_centerness(fcos_cls_feat)
             if self.norm_reg_targets:
                 bbox_reg = F.relu(bbox_reg)
                 if mode == 'infer':
@@ -284,7 +267,7 @@ class FCOSHead(nn.Layer):
             cls_logits_list.append(cls_logits)
             bboxes_reg_list.append(bbox_reg)
             centerness_list.append(centerness)
-        
+
         if mode == 'infer':
             locations_list = self._compute_locatioins(fpn_feats)
             return locations_list, cls_logits_list, bboxes_reg_list, centerness_list

@@ -327,7 +327,7 @@ class FCOSBox(object):
         self.num_classes = num_classes
         self.batch_size = batch_size
 
-    def __merge_hw(self, inputs, ch_type="channel_first"):
+    def _merge_hw(self, inputs, ch_type="channel_first"):
         """
         Args:
             inputs (Variables): Feature map whose H and W will be merged into one dimension
@@ -362,11 +362,11 @@ class FCOSBox(object):
             box_reg_decoding (Variables): decoded bounding box, in [N, M, 4]
                 last dimension is [x1, y1, x2, y2]
         """
-        act_shape_cls = self.__merge_hw(box_cls)
+        act_shape_cls = self._merge_hw(box_cls)
         box_cls_ch_last = paddle.reshape(x=box_cls, shape=act_shape_cls)
         box_cls_ch_last = F.sigmoid(box_cls_ch_last)
 
-        act_shape_reg = self.__merge_hw(box_reg)
+        act_shape_reg = self._merge_hw(box_reg)
         box_reg_ch_last = paddle.reshape(x=box_reg, shape=act_shape_reg)
         box_reg_ch_last = paddle.transpose(box_reg_ch_last, perm=[0, 2, 1]) # fix
         box_reg_decoding = paddle.stack(
@@ -379,7 +379,7 @@ class FCOSBox(object):
             axis=1)
         box_reg_decoding = paddle.transpose(box_reg_decoding, perm=[0, 2, 1])
 
-        act_shape_ctn = self.__merge_hw(box_ctn)
+        act_shape_ctn = self._merge_hw(box_ctn)
         box_ctn_ch_last = paddle.reshape(x=box_ctn, shape=act_shape_ctn)
         box_ctn_ch_last = F.sigmoid(box_ctn_ch_last) 
 
@@ -392,9 +392,7 @@ class FCOSBox(object):
     def __call__(self, locations, cls_logits, bboxes_reg, centerness, scale_factor):
         pred_boxes_ = []
         pred_scores_ = []
-        for _, (
-                pts, cls, box, ctn
-        ) in enumerate(zip(locations, cls_logits, bboxes_reg, centerness)):
+        for pts, cls, box, ctn in zip(locations, cls_logits, bboxes_reg, centerness):
             pred_scores_lvl, pred_boxes_lvl = self._postprocessing_by_level(
                 pts, cls, box, ctn, scale_factor)
             pred_boxes_.append(pred_boxes_lvl)

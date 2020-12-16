@@ -69,7 +69,6 @@ class FCOS(BaseArch):
         bbox, bbox_num = self.bboxes
         output = {
             'bbox': bbox,
-            'bbox_num': bbox_num,
-            'im_id': self.inputs['im_id']
+            'bbox_num': bbox_num
         }
         return output
